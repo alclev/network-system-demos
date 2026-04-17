@@ -11,7 +11,7 @@ const int PORT = 6008;
 
 // Use a large buffer for TCP to maximize throughput
 const int TCP_CHUNK_SIZE = 4096; 
-const int TCP_TOTAL_CHUNKS = 10000;
+const int TCP_TOTAL_CHUNKS = 100000;
 
 void log_error(const char *prefix, int err) {
   char buf[1024];
