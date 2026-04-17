@@ -76,9 +76,14 @@ void run_tcp_server() {
   auto end = std::chrono::high_resolution_clock::now();
 
   std::chrono::duration<double> elapsed = end - start;
+  long packets_received = total_bytes / PACKET_SIZE;
+  double bandwidth_mbps = (total_bytes * 8.0 / 1000000.0) / elapsed.count();
+  
   std::cout << "TCP Benchmark Complete.\n";
-  std::cout << "Received: " << total_bytes << " bytes.\n";
+  std::cout << "Received: " << packets_received << " / " << NUM_PACKETS << " packets.\n";
+  std::cout << "Total Data: " << total_bytes << " bytes.\n";
   std::cout << "Time: " << elapsed.count() << " seconds.\n";
+  std::cout << "Network Bandwidth: " << bandwidth_mbps << " Mbps\n";
   std::cout << "Throughput: " << (total_bytes / (1024.0 * 1024.0)) / elapsed.count() << " MB/s\n";
 
   close(client_socket);
