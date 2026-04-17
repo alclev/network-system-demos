@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 const int PORT = 6008;
-const int PACKET_SIZE = 1024;
+const int PACKET_SIZE = 4096;
 const int NUM_PACKETS = 100000;
 
 void log_error(const char *prefix, int err) {
@@ -82,7 +82,7 @@ void run_tcp_server() {
   std::cout << "TCP Benchmark Complete.\n";
   std::cout << "Received: " << packets_received << " / " << NUM_PACKETS << " packets.\n";
   std::cout << "Total Data: " << total_bytes << " bytes.\n";
-  std::cout << "Time: " << elapsed.count() << " seconds.\n";
+  std::cout << "Latency: " << elapsed.count() << " seconds.\n";
   std::cout << "Network Bandwidth: " << bandwidth_mbps << " Mbps\n";
   std::cout << "Throughput: " << (total_bytes / (1024.0 * 1024.0)) / elapsed.count() << " MB/s\n";
 
@@ -165,7 +165,7 @@ void run_udp_server() {
   std::cout << "UDP Benchmark Complete.\n";
   std::cout << "Received: " << packets_received << " / " << NUM_PACKETS << " packets.\n";
   std::cout << "Packet Loss: " << 100.0 * (NUM_PACKETS - packets_received) / NUM_PACKETS << "%\n";
-  std::cout << "Time: " << elapsed.count() << " seconds.\n";
+  std::cout << "Latency: " << elapsed.count() << " seconds.\n";
   std::cout << "Throughput: " << (total_bytes / (1024.0 * 1024.0)) / elapsed.count() << " MB/s\n";
 
   close(server_fd);
