@@ -9,9 +9,8 @@
 
 const int PORT = 6008;
 
-// Use a large buffer for TCP to maximize throughput
-const int TCP_CHUNK_SIZE = 4096; 
-const int TCP_TOTAL_CHUNKS = 100000;
+const size_t TARGET_DATA_BYTES = 1024ULL * 1024 * 1024; // 1 GiB
+const size_t TCP_CHUNK_SIZE = 1024; // 1 KB chunks
 
 void log_error(const char *prefix, int err) {
   char buf[1024];
@@ -84,7 +83,8 @@ void run_tcp_server() {
   double throughput_mbps = (total_bytes * 8.0 / 1000000.0) / elapsed.count();
   
   std::cout << "TCP Benchmark Complete.\n";
-  std::cout << "Total Data Received: " << total_bytes << " bytes.\n";
+  std::cout << "Total Data Received: " << total_bytes << " bytes (" 
+            << total_bytes / (1024 * 1024) << " MB).\n";
   std::cout << "Transfer Time: " << elapsed.count() << " seconds.\n";
   std::cout << "Throughput: " << throughput_mbps << " Mbps\n";
 
@@ -115,13 +115,41 @@ void run_tcp_client(const char* ip) {
 
   std::vector<char> buffer(TCP_CHUNK_SIZE, 'A');
 
-  std::cout << "Sending " << TCP_TOTAL_CHUNKS << " TCP chunks (" 
-            << (TCP_CHUNK_SIZE * TCP_TOTAL_CHUNKS) / (1024*1024) << " MB)...\n";
+  size_t total_chunks = TARGET_DATA_BYTES / TCP_CHUNK_SIZE;
+  size_t remaining_bytes = TARGET_DATA_BYTES % TCP_CHUNK_SIZE;
+
+  std::cout << "Target Data Size: " << TARGET_DATA_BYTES / (1024 * 1024) << " MB\n";
+  std::cout << "Chunk Size: " << TCP_CHUNK_SIZE << " bytes\n";
+  std::cout << "Sending " << total_chunks << " full chunks...\n";
 
   auto start = std::chrono::high_resolution_clock::now();
   
-  for (int i = 0; i < TCP_TOTAL_CHUNKS; i++) {
-    send(sock, buffer.data(), TCP_CHUNK_SIZE, 0);
+  // Send all full chunks
+  for (size_t i = 0; i < total_chunks; i++) {
+    size_t bytes_sent = 0;
+    while (bytes_sent < TCP_CHUNK_SIZE) {
+      ssize_t result = send(sock, buffer.data() + bytes_sent, TCP_CHUNK_SIZE - bytes_sent, 0);
+      if (result <= 0) {
+        log_error("Send failed:", errno);
+        close(sock);
+        return;
+      }
+      bytes_sent += result;
+    }
+  }
+
+  // Send any remaining bytes that didn't fit perfectly into a chunk
+  if (remaining_bytes > 0) {
+    size_t bytes_sent = 0;
+    while (bytes_sent < remaining_bytes) {
+      ssize_t result = send(sock, buffer.data() + bytes_sent, remaining_bytes - bytes_sent, 0);
+      if (result <= 0) {
+        log_error("Send failed on remainder:", errno);
+        close(sock);
+        return;
+      }
+      bytes_sent += result;
+    }
   }
   
   auto end = std::chrono::high_resolution_clock::now();
