@@ -132,18 +132,17 @@ void run_tcp_client(const char* ip) {
 }
 
 int main(int argc, char const *argv[]) {
-  if (argc < 3) {
-    std::cerr << "Usage: " << argv[0] << " [server|client] [tcp|udp] <ip_for_client>\n";
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " [server|client] <ip_for_client>\n";
     return -1;
   }
 
   std::string mode = argv[1];
-  std::string proto = argv[2];
 
   if (mode == "server") {
     run_tcp_server();
-  } else if (mode == "client" && argc == 4) {
-    std::string ip = argv[3];
+  } else if (mode == "client" && argc == 3) {
+    std::string ip = argv[2];
     run_tcp_client(ip.c_str());
   } else {
     std::cerr << "Invalid arguments.\n";
