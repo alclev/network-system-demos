@@ -1,17 +1,20 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -O3 -std=c++11 -Wall
+CXXFLAGS = -O3 -std=c++17 -Wall
 
 # Target executable name
-TARGET = tcp
-SRC = tcp.cc
+TARGETS = tcp benchmark
 
 # Default build target
-all: $(TARGET)
+all: $(TARGETS)
+
+# Compile the tcp program
+tcp: tcp.cc
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
 # Compile the benchmark program
-$(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRC)
+benchmark: benchmark.cc
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
 # Cleanup compiled files
 clean:
