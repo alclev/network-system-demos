@@ -131,7 +131,7 @@ void run_udp_server() {
   
   // Set a timeout so the server doesn't hang forever after client finishes
   struct timeval tv;
-  tv.tv_sec = 180;
+  tv.tv_sec = 2;
   tv.tv_usec = 0;
   setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
