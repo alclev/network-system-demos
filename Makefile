@@ -3,16 +3,17 @@ CXX = g++
 CXXFLAGS = -O3 -std=c++17 -Wall
 
 # Target executable name
-TARGETS = tcp benchmark
+TARGETS = tcp_throughput tcp_latency benchmark
 
 # Default build target
 all: $(TARGETS)
 
-# Compile the tcp program
-tcp: tcp.cc
+tcp_throughput: tcp_throughput.cc
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-# Compile the benchmark program
+tcp_latency: tcp_latency.cc
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
 benchmark: benchmark.cc
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
