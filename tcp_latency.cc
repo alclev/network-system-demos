@@ -10,10 +10,10 @@
 const int PORT = 6009;
 const int TOTAL_TRANSACTIONS = 100000; // 100k synchronous request/responses
 
-// 8 byte message
+// 32 byte message
 struct SmallMessage {
   uint32_t sequence_id;
-  uint32_t payload_data;
+  char payload_data[28];
 };
 
 void log_error(const char *prefix, int err) {
@@ -61,11 +61,11 @@ void run_tcp_server() {
   }
 
   // Optmization 2: Disable delayed ACKs
-  if (setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt)) < 0) {
+  /* if (setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt)) < 0) {
     log_error("setsockopt(TCP_QUICKACK) failed:", errno);
     close(server_fd);
     return;
-  }
+  } */
 
   // create the address to bind with server socket
   sockaddr_in address{};
@@ -107,7 +107,7 @@ void run_tcp_server() {
     
     // Echo back the sequence ID as an acknowledgment
     response.sequence_id = request.sequence_id;
-    response.payload_data = 1; // 1 = Success
+    memset(response.payload_data, 1, sizeof(response.payload_data)); // 1 = Success
 
     if (!send_request(client_socket, &response, sizeof(response))) {
       break;
@@ -142,12 +142,12 @@ void run_tcp_client(const char* ip) {
   }
 
   // Optimization 1: Disable Nagle's algorithm on the sending socket
-  int opt_nodelay = 1;
+  /* int opt_nodelay = 1;
   if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
     log_error("setsockopt(TCP_NODELAY) failed:", errno);
     close(sock);
     return;
-  }
+  } */
 
   SmallMessage request;
   SmallMessage response;
@@ -158,7 +158,7 @@ void run_tcp_client(const char* ip) {
     
   for (uint32_t i = 0; i < TOTAL_TRANSACTIONS; i++) {
     request.sequence_id = i;
-    request.payload_data = 42;
+    memset(request.payload_data, 0x42, sizeof(request.payload_data));
 
     // Send the small request
     if (!send_request(sock, &request, sizeof(request))) {
