@@ -34,8 +34,8 @@ void run_tcp_server() {
     return;
   }
 
-  // Optmization 1: Disable Nagle's algorithm on the server socket
-  if (setsockopt(server_fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt)) < 0) {
+  // Optmization 2: Disable delayed ACKs
+  if (setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt)) < 0) {
     log_error("setsockopt(TCP_NODELAY) failed:", errno);
     close(server_fd);
     return;
