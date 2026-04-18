@@ -61,11 +61,11 @@ void run_tcp_server() {
   }
 
   // Optmization 2: Disable delayed ACKs
-  /* if (setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt)) < 0) {
+  if (setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt)) < 0) {
     log_error("setsockopt(TCP_NODELAY) failed:", errno);
     close(server_fd);
     return;
-  } */
+  }
 
   // create the address to bind with server socket
   sockaddr_in address{};
@@ -138,6 +138,14 @@ void run_tcp_client(const char* ip) {
 
   if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
     std::cerr << "TCP Connection Failed\n";
+    return;
+  }
+
+  // Optimization 1: Disable Nagle's algorithm on the sending socket
+  int opt_nodelay = 1;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
+    log_error("setsockopt(TCP_NODELAY) failed:", errno);
+    close(sock);
     return;
   }
 
