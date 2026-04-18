@@ -4,6 +4,7 @@
 #include <vector>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 
@@ -32,6 +33,9 @@ void run_tcp_server() {
     log_error("setsockopt(SO_REUSEADDR) failed:", errno);
     return;
   }
+
+  // Optmization 1: Disable Nagle's algorithm
+  
 
   // create the address to bind with server socket
   sockaddr_in address{};

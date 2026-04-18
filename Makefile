@@ -18,6 +18,6 @@ benchmark: benchmark.cc
 
 # Cleanup compiled files
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGETS)
 
 .PHONY: all clean
