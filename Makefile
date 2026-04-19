@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -O3 -std=c++17 -Wall
+CXXFLAGS = -O3 -std=c++17 -Wall -lpthread
 
 # Target executable name
 TARGETS = tcp_throughput tcp_latency benchmark
