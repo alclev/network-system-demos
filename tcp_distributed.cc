@@ -14,7 +14,13 @@ const int PORT = 6005;
 const int NUM_NODES = 4;
 const int MESSAGES_PER_THREAD = 10000;
 
-std::vector<std::string> node_ips; // Holds the cluster IPs
+// Hardcoded Cluster Routing Table
+const std::vector<std::string> node_ips = {
+  "128.180.120.87", // Node 0
+  "120.180.120.75", // Node 1 
+  "128.180.120.70", // Node 2
+  "128.180.120.80"  // Node 3
+};
 
 struct Message {
   int sender_id;
@@ -132,17 +138,17 @@ void client_thread(int my_node_id, int target_node_id) {
 }
 
 int main(int argc, char* argv[]) {
-  // Requires exact IP mapping
-  if (argc != 6) {
-      std::cerr << "Usage: ./node <my_id> <ip_0> <ip_1> <ip_2> <ip_3>\n";
-      return 1;
+  if (argc != 2) {
+    std::cerr << "Usage: ./tcp_distributed <my_id>\n";
+    return 1;
   }
 
   int my_node_id = std::stoi(argv[1]);
   
-  // Store IP addresses for the client thread routing
-  for (int i = 2; i < 6; ++i) {
-    node_ips.push_back(argv[i]);
+  // Safety check to ensure valid node ID
+  if (my_node_id < 0 || my_node_id >= NUM_NODES) {
+    std::cerr << "Invalid node ID. Must be between 0 and 3.\n";
+    return 1;
   }
   
   // Start Server Thread
