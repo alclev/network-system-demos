@@ -62,7 +62,7 @@ void run_tcp_server() {
   }
 
   // mark the socket to listen state
-  if (listen(server_fd, 32) < 0) {
+  if (listen(server_fd, SOMAXCONN) < 0) {
     log_error("Error listening:", errno);
     return;
   }
