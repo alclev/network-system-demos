@@ -60,11 +60,11 @@ void run_tcp_server() {
     return;
   }
 
-  // Optmization 2: Disable delayed ACKs
-  if (setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt)) < 0) {
-    log_error("setsockopt(TCP_QUICKACK) failed:", errno);
-    close(server_fd);
-    return;
+  // Optimization 3: Increase Receive Buffer Size (4 MB)
+  // Must be done before listen() so Window Scaling is negotiated correctly
+  int rcvbuf = 4 * 1024 * 1024; 
+  if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0) {
+    log_error("setsockopt(SO_RCVBUF) failed:", errno);
   }
 
   // create the address to bind with server socket
@@ -104,6 +104,11 @@ void run_tcp_server() {
     if (!recv_request(client_socket, &request, sizeof(request))) {
       break; // Client disconnected
     }
+
+    // Optimization 2: Disable delayed ACKs for the incoming packet
+    // This must be set on the active client_socket, and reused after every read
+    int quickack = 1;
+    setsockopt(client_socket, IPPROTO_TCP, TCP_QUICKACK, &quickack, sizeof(quickack));
     
     // Echo back the sequence ID as an acknowledgment
     response.sequence_id = request.sequence_id;
@@ -127,6 +132,20 @@ void run_tcp_client(const char* ip) {
     return;
   }
 
+  // Optimization 3: Increase Send Buffer Size (4 MB)
+  int sndbuf = 4 * 1024 * 1024; 
+  if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0) {
+    log_error("setsockopt(SO_SNDBUF) failed:", errno);
+  }
+
+  // Optimization 1: Disable Nagle's algorithm on the sending socket
+  int opt_nodelay = 1;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
+    log_error("setsockopt(TCP_NODELAY) failed:", errno);
+    close(sock);
+    return;
+  }
+
   sockaddr_in serv_addr{};
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(PORT);
@@ -138,14 +157,6 @@ void run_tcp_client(const char* ip) {
 
   if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
     std::cerr << "TCP Connection Failed\n";
-    return;
-  }
-
-  // Optimization 1: Disable Nagle's algorithm on the sending socket
-  int opt_nodelay = 1;
-  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
-    log_error("setsockopt(TCP_NODELAY) failed:", errno);
-    close(sock);
     return;
   }
 

@@ -41,6 +41,13 @@ void run_tcp_server() {
     return;
   }
 
+  // Optimization 3: Increase Receive Buffer Size (4 MB)
+  // Must be done before listen() so Window Scaling is negotiated correctly
+  int rcvbuf = 4 * 1024 * 1024; 
+  if (setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0) {
+    log_error("setsockopt(SO_RCVBUF) failed:", errno);
+  }
+
   // create the address to bind with server socket
   sockaddr_in address{};
   address.sin_family = AF_INET;
@@ -107,6 +114,20 @@ void run_tcp_client(const char* ip) {
     return;
   }
 
+  // Optimization 3: Increase Send Buffer Size (4 MB)
+  int sndbuf = 4 * 1024 * 1024; 
+  if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0) {
+    log_error("setsockopt(SO_SNDBUF) failed:", errno);
+  }
+
+  // Optimization 1: Disable Nagle's algorithm on the sending socket
+  int opt_nodelay = 1;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
+    log_error("setsockopt(TCP_NODELAY) failed:", errno);
+    close(sock);
+    return;
+  }
+
   sockaddr_in serv_addr{};
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(PORT);
@@ -118,14 +139,6 @@ void run_tcp_client(const char* ip) {
 
   if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
     std::cerr << "TCP Connection Failed\n";
-    return;
-  }
-
-  // Optimization 1: Disable Nagle's algorithm on the sending socket
-  int opt_nodelay = 1;
-  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
-    log_error("setsockopt(TCP_NODELAY) failed:", errno);
-    close(sock);
     return;
   }
 
