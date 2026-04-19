@@ -15,6 +15,9 @@ const int NUM_NODES = 4;
 const int TOTAL_MESSAGES = 100000;
 const int MESSAGES_PER_THREAD = TOTAL_MESSAGES / NUM_CLIENT_THREADS;
 
+const int BARRIER_PORT_START = 6006;
+const int BARRIER_PORT_END = 6007;
+
 // Hardcoded Cluster Routing Table
 const std::vector<std::string> node_ips = {
   "128.180.120.87", // Node 0
@@ -166,6 +169,71 @@ void client_thread(int my_node_id, int target_node_id) {
   }
 }
 
+void distributed_barrier(int my_node_id, int num_nodes, const std::string& coordinator_ip, int barrier_port) {
+  if (my_node_id == 0) {
+    // Node 0 acts as the coordinator
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+      
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(barrier_port);
+      
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+      log_error("Barrier bind failed", errno);
+      exit(1);
+    }
+    listen(server_fd, num_nodes);
+      
+    std::cout << "[Node 0] Coordinator waiting at barrier on port " << barrier_port << "...\n";
+    
+    std::vector<int> client_sockets;
+    for (int i = 0; i < num_nodes - 1; ++i) {
+      int client_sock = accept(server_fd, nullptr, nullptr);
+      char ready;
+      read_exact(client_sock, &ready, 1); // Receive 'R'
+      client_sockets.push_back(client_sock);
+    }
+      
+    // Broadcast 'G' (Go) to release all nodes
+    for (int sock : client_sockets) {
+      char go = 'G';
+      write_exact(sock, &go, 1);
+      close(sock);
+    }
+    close(server_fd);
+  } else {
+    // Nodes 1-3 act as participants
+    int sock;
+    sockaddr_in serv_addr{};
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(barrier_port);
+    inet_pton(AF_INET, coordinator_ip.c_str(), &serv_addr.sin_addr);
+    
+    std::cout << "[Node " << my_node_id << "] Reaching barrier on port " << barrier_port << "...\n";
+    
+    // Retry loop in case Node 0's socket isn't actively listening yet
+    while (true) {
+      sock = socket(AF_INET, SOCK_STREAM, 0);
+      if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == 0) {
+          break;
+      }
+      close(sock);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    char ready = 'R';
+    write_exact(sock, &ready, 1); // Send Ready
+    
+    char go;
+    read_exact(sock, &go, 1);     // Block until Go is received
+    close(sock);
+  }
+  std::cout << "[Node " << my_node_id << "] Barrier passed.\n";
+}
+
 int main(int argc, char* argv[]) {
   if (argc != 2) {
     std::cerr << "Usage: ./tcp_distributed <my_id>\n";
@@ -184,8 +252,7 @@ int main(int argc, char* argv[]) {
   std::thread server(server_loop, my_node_id);
   server.detach();
 
-  // Wait for all nodes to spin up their servers
-  std::this_thread::sleep_for(std::chrono::seconds(2));
+  distributed_barrier(my_node_id, NUM_NODES, node_ips[0], BARRIER_PORT_START);
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -201,14 +268,13 @@ int main(int argc, char* argv[]) {
     t.join();
   }
 
+  distributed_barrier(my_node_id, NUM_NODES, node_ips[0], BARRIER_PORT_END);
+
   auto end_time = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = end_time - start_time;
 
   std::cout << "Node " << my_node_id << " finished sending. " 
             << "Time taken: " << elapsed.count() << " seconds.\n";
-
-  // Keep alive to process remaining incoming messages
-  std::this_thread::sleep_for(std::chrono::seconds(5));
   std::cout << "Total messages processed by server: " << messages_processed << "\n";
 
   return 0;
