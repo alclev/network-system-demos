@@ -17,7 +17,7 @@ const int MESSAGES_PER_THREAD = 10000;
 // Hardcoded Cluster Routing Table
 const std::vector<std::string> node_ips = {
   "128.180.120.87", // Node 0
-  "120.180.120.75", // Node 1 
+  "128.180.120.75", // Node 1 
   "128.180.120.70", // Node 2
   "128.180.120.80"  // Node 3
 };
