@@ -35,19 +35,47 @@ void log_error(const char *prefix, int err) {
             << std::endl;
 }
 
+// Helper function to guarantee full reads
+ssize_t read_exact(int fd, void* buf, size_t count) {
+  size_t total_read = 0;
+  char* char_buf = static_cast<char*>(buf);
+  while (total_read < count) {
+    ssize_t bytes = read(fd, char_buf + total_read, count - total_read);
+    if (bytes <= 0) {
+        return bytes; // 0 for EOF, -1 for error
+    }
+    total_read += bytes;
+  }
+  return total_read;
+}
+
+// Helper function to guarantee full writes
+ssize_t write_exact(int fd, const void* buf, size_t count) {
+  size_t total_written = 0;
+  const char* char_buf = static_cast<const char*>(buf);
+  while (total_written < count) {
+    ssize_t bytes = write(fd, char_buf + total_written, count - total_written);
+    if (bytes <= 0) {
+        return bytes; 
+    }
+    total_written += bytes;
+  }
+  return total_written;
+}
+
 std::atomic<int> messages_processed{0};
 
 // Server: Handles incoming requests
 void server_worker(int client_sock) {
   Message msg;
-  while (read(client_sock, &msg, sizeof(Message)) > 0) {
+  while (read_exact(client_sock, &msg, sizeof(Message)) > 0) {
     messages_processed++;
     
     // Simulate processing
     msg.sender_id = -1; // ACK
     
     // Standard write() copies data from User Space to Kernel Space
-    write(client_sock, &msg, sizeof(Message));
+    write_exact(client_sock, &msg, sizeof(Message));
   }
   close(client_sock);
 }
@@ -127,10 +155,10 @@ void client_thread(int my_node_id, int target_node_id) {
     memset(msg.payload, 'A', sizeof(msg.payload));
 
     // Unoptimized payload delivery: 1 write per syscall
-    write(sock, &msg, sizeof(Message));
+    write_exact(sock, &msg, sizeof(Message));
       
     Message response;
-    read(sock, &response, sizeof(Message));
+    read_exact(sock, &response, sizeof(Message));
 
     // Closing connection immediately after one request/response
     close(sock);
