@@ -153,6 +153,7 @@ int main(int argc, char* argv[]) {
   
   // Start Server Thread
   std::thread server(server_loop, my_node_id);
+  server.detach();
 
   // Wait for all nodes to spin up their servers
   std::this_thread::sleep_for(std::chrono::seconds(2));
