@@ -11,41 +11,16 @@
 #include <unistd.h>
 
 const int PORT = 6008;
-const int NUM_STREAMS = 4; // Optimization 5: Number of parallel TCP streams
 
 const size_t TARGET_DATA_BYTES = 1024ULL * 1024 * 1024; // 1 GiB
-// const size_t TCP_CHUNK_SIZE = 1024; // 1 KB chunks
-const size_t TCP_CHUNK_SIZE = 1024 * 1024; // 1 MB chunks
+const size_t TCP_CHUNK_SIZE = 1024; // 1 KB chunks
+// const size_t TCP_CHUNK_SIZE = 1024 * 1024; // 1 MB chunks - reduce the number of send() calls
 
 void log_error(const char *prefix, int err) {
   char buf[1024];
   std::cerr << "[Error] " << prefix << " " 
             << strerror_r(err, buf, sizeof(buf))
             << std::endl;
-}
-
-// Thread worker to handle a single incoming client connection
-void server_receive_worker(int client_socket, std::atomic<long>& total_bytes) {
-  std::vector<char> buffer(TCP_CHUNK_SIZE);
-  long local_bytes = 0;
-    
-  // Optimization 2: Disable delayed ACKs on the active socket
-  int opt = 1;
-  setsockopt(client_socket, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt));
-
-  while (true) {
-    int bytes_read = recv(client_socket, buffer.data(), TCP_CHUNK_SIZE, 0);
-    if (bytes_read == 0) {
-      break; // Client closed
-    } else if (bytes_read < 0) {
-      log_error("recv failed:", errno);
-      break;
-    }
-    local_bytes += bytes_read;
-  }
-    
-  total_bytes += local_bytes;
-  close(client_socket);
 }
 
 void run_tcp_server() {
@@ -95,30 +70,29 @@ void run_tcp_server() {
   }
 
   std::cout << "TCP Server listening on port " << PORT << "...\n";
-  std::cout << "Expecting " << NUM_STREAMS << " incoming streams.\n";
 
-  std::vector<std::thread> workers;
-  std::atomic<long> total_bytes{0};
-  auto start = std::chrono::high_resolution_clock::now();
-
-  for (int i = 0; i < NUM_STREAMS; ++i) {
-    int client_socket = accept(server_fd, nullptr, nullptr);
-    if (client_socket < 0) {
-      log_error("Error accepting connection:", errno);
-      continue;
-    }
-    
-    // Start the timer precisely when the first connection is established
-    if (i == 0) {
-      start = std::chrono::high_resolution_clock::now();
-    }
-
-    workers.emplace_back(server_receive_worker, client_socket, std::ref(total_bytes));
+  // accept a incoming connection that returns a new_socket to communicate with the client
+  int client_socket = accept(server_fd, nullptr, nullptr);
+  if (client_socket < 0) {
+    log_error("Error accepting connection:", errno);
+    return;
   }
 
-  // Wait for all streams to finish transmitting
-  for (auto& t : workers) {
-    if (t.joinable()) t.join();
+  char buffer[TCP_CHUNK_SIZE];
+  long total_bytes = 0;
+
+  auto start = std::chrono::high_resolution_clock::now();
+    
+  while (true) {
+    int bytes_read = recv(client_socket, buffer, sizeof(buffer), 0);
+    if (bytes_read == 0) {
+      // Client closed connection gracefully
+      break;
+    } else if (bytes_read < 0) {
+      log_error("recv failed:", errno);
+      break;
+    }
+    total_bytes += bytes_read;
   }
     
   auto end = std::chrono::high_resolution_clock::now();
@@ -130,13 +104,13 @@ void run_tcp_server() {
   std::cout << "Total Data Received: " << total_bytes << " bytes (" 
             << total_bytes / (1024 * 1024) << " MB).\n";
   std::cout << "Transfer Time: " << elapsed.count() << " seconds.\n";
-  std::cout << "Aggregate Throughput: " << throughput_mbps << " Mbps\n";
+  std::cout << "Throughput: " << throughput_mbps << " Mbps\n";
 
+  close(client_socket);
   close(server_fd);
 }
 
-// Thread worker to transmit a dedicated chunk of the total payload
-void client_send_worker(std::string ip, size_t target_bytes, int stream_id) {
+void run_tcp_client(const char* ip) {
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   if (sock < 0) {
     log_error("Socket creation failed:", errno);
@@ -145,28 +119,44 @@ void client_send_worker(std::string ip, size_t target_bytes, int stream_id) {
 
   // Optimization 3: Increase Send Buffer Size (4 MB)
   int sndbuf = 4 * 1024 * 1024; 
-  setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+  if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0) {
+    log_error("setsockopt(SO_SNDBUF) failed:", errno);
+  }
 
-  // Optimization 1: Disable Nagle's algorithm
+  // Optimization 1: Disable Nagle's algorithm on the sending socket
   int opt_nodelay = 1;
-  setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay));
-
-  sockaddr_in serv_addr{};
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(PORT);
-  inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr);
-
-  if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-    std::cerr << "[Stream " << stream_id << "] Connection Failed\n";
+  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt_nodelay, sizeof(opt_nodelay)) < 0) {
+    log_error("setsockopt(TCP_NODELAY) failed:", errno);
     close(sock);
     return;
   }
 
-  std::vector<char> buffer(TCP_CHUNK_SIZE, 'A');
-  size_t total_chunks = target_bytes / TCP_CHUNK_SIZE;
-  size_t remaining_bytes = target_bytes % TCP_CHUNK_SIZE;
+  sockaddr_in serv_addr{};
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(PORT);
 
-  // Transmit full chunks
+  if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {
+    std::cerr << "Invalid address or address not supported.\n";
+    return;
+  }
+
+  if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+    std::cerr << "TCP Connection Failed\n";
+    return;
+  }
+
+  std::vector<char> buffer(TCP_CHUNK_SIZE, 'A');
+
+  size_t total_chunks = TARGET_DATA_BYTES / TCP_CHUNK_SIZE;
+  size_t remaining_bytes = TARGET_DATA_BYTES % TCP_CHUNK_SIZE;
+
+  std::cout << "Target Data Size: " << TARGET_DATA_BYTES / (1024 * 1024) << " MB\n";
+  std::cout << "Chunk Size: " << TCP_CHUNK_SIZE << " bytes\n";
+  std::cout << "Sending " << total_chunks << " full chunks...\n";
+
+  auto start = std::chrono::high_resolution_clock::now();
+  
+  // Send all full chunks
   for (size_t i = 0; i < total_chunks; i++) {
     size_t bytes_sent = 0;
     while (bytes_sent < TCP_CHUNK_SIZE) {
@@ -180,12 +170,13 @@ void client_send_worker(std::string ip, size_t target_bytes, int stream_id) {
     }
   }
 
-  // Transmit remainder
+  // Send any remaining bytes that didn't fit perfectly into a chunk
   if (remaining_bytes > 0) {
     size_t bytes_sent = 0;
     while (bytes_sent < remaining_bytes) {
       ssize_t result = send(sock, buffer.data() + bytes_sent, remaining_bytes - bytes_sent, 0);
       if (result <= 0) {
+        log_error("Send failed on remainder:", errno);
         close(sock);
         return;
       }
@@ -193,36 +184,11 @@ void client_send_worker(std::string ip, size_t target_bytes, int stream_id) {
     }
   }
   
-  close(sock);
-}
-
-void run_tcp_client(const char* ip) {
-  std::cout << "Target Data Size: " << TARGET_DATA_BYTES / (1024 * 1024) << " MB\n";
-  std::cout << "Chunk Size: " << TCP_CHUNK_SIZE / (1024 * 1024) << " MB\n";
-  std::cout << "Executing Multi-Stream Multiplexing with " << NUM_STREAMS << " threads...\n";
-
-  // Calculate payload distribution
-  size_t bytes_per_stream = TARGET_DATA_BYTES / NUM_STREAMS;
-  size_t remainder = TARGET_DATA_BYTES % NUM_STREAMS;
-
-  std::vector<std::thread> streams;
-  auto start = std::chrono::high_resolution_clock::now();
-
-  for (int i = 0; i < NUM_STREAMS; ++i) {
-    // Ensure the first stream handles any fractional bytes if the payload isn't perfectly divisible
-    size_t send_amount = bytes_per_stream + (i == 0 ? remainder : 0);
-    streams.emplace_back(client_send_worker, std::string(ip), send_amount, i);
-  }
-
-  // Wait for all worker threads to complete transmission
-  for (auto& t : streams) {
-    if (t.joinable()) t.join();
-  }
-
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = end - start;
 
   std::cout << "Finished TCP transmission in " << elapsed.count() << " seconds.\n";
+  close(sock);
 }
 
 int main(int argc, char const *argv[]) {

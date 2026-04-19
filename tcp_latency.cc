@@ -1,6 +1,7 @@
 #include <iostream>
 #include <chrono>
 #include <cstring>
+#include <vector>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -9,6 +10,7 @@
 
 const int PORT = 6009;
 const int TOTAL_TRANSACTIONS = 100000; // 100k synchronous request/responses
+const int BATCH_SIZE = 32;
 
 // 32 byte message
 struct SmallMessage {
@@ -94,30 +96,35 @@ void run_tcp_server() {
     return;
   }
 
-  SmallMessage request;
-  SmallMessage response;
+  // Optimization 4: batching
+  std::vector<SmallMessage> request_batch(BATCH_SIZE);
+  std::vector<SmallMessage> response_batch(BATCH_SIZE);
 
   long messages_processed = 0;
 
   // Server Event Loop: Receive request -> Send response
   while (true) {
-    if (!recv_request(client_socket, &request, sizeof(request))) {
-      break; // Client disconnected
+    // Read the entire batch in one system call loop
+    if (!recv_request(client_socket, request_batch.data(), BATCH_SIZE * sizeof(SmallMessage))) {
+      break; 
     }
 
     // Optimization 2: Disable delayed ACKs for the incoming packet
     // This must be set on the active client_socket, and reused after every read
     int quickack = 1;
     setsockopt(client_socket, IPPROTO_TCP, TCP_QUICKACK, &quickack, sizeof(quickack));
-    
-    // Echo back the sequence ID as an acknowledgment
-    response.sequence_id = request.sequence_id;
-    memset(response.payload_data, 1, sizeof(response.payload_data)); // 1 = Success
 
-    if (!send_request(client_socket, &response, sizeof(response))) {
+    // Process the batch entirely
+    for (int i = 0; i < BATCH_SIZE; ++i) {
+      response_batch[i].sequence_id = request_batch[i].sequence_id;
+      memset(response_batch[i].payload_data, 1, sizeof(response_batch[i].payload_data));
+    }
+    
+    // Send the entire batch back in one system call loop
+    if (!send_request(client_socket, response_batch.data(), BATCH_SIZE * sizeof(SmallMessage))) {
       break;
     }
-    messages_processed++;
+    messages_processed += BATCH_SIZE;
   }
 
   std::cout << "Server closed. Processed " << messages_processed << " transactions.\n";
@@ -160,33 +167,38 @@ void run_tcp_client(const char* ip) {
     return;
   }
 
-  SmallMessage request;
-  SmallMessage response;
+  std::vector<SmallMessage> request_batch(BATCH_SIZE);
+  std::vector<SmallMessage> response_batch(BATCH_SIZE);
 
   std::cout << "Starting " << TOTAL_TRANSACTIONS << " synchronous RPC calls...\n";
 
   auto start = std::chrono::high_resolution_clock::now();
     
-  for (uint32_t i = 0; i < TOTAL_TRANSACTIONS; i++) {
-    request.sequence_id = i;
-    memset(request.payload_data, 0x42, sizeof(request.payload_data));
+  for (uint32_t i = 0; i < TOTAL_TRANSACTIONS; i += BATCH_SIZE) {
+    // Prepare the batch
+    for (int j = 0; j < BATCH_SIZE; ++j) {
+      request_batch[j].sequence_id = i + j;
+      memset(request_batch[j].payload_data, 0x42, sizeof(request_batch[j].payload_data));
+    }
 
-    // Send the small request
-    if (!send_request(sock, &request, sizeof(request))) {
+    // Send the requests batch at once
+    if (!send_request(sock, request_batch.data(), BATCH_SIZE * sizeof(SmallMessage))) {
       log_error("Send failed", errno);
       break;
     }
 
-    // Block and wait for the exact response
-    if (!recv_request(sock, &response, sizeof(response))) {
+    // Receive responses batch at once
+    if (!recv_request(sock, response_batch.data(), BATCH_SIZE * sizeof(SmallMessage))) {
       log_error("Receive failed", errno);
       break;
     }
 
-    // Validation
-    if (response.sequence_id != i) {
-      std::cerr << "Sequence mismatch!\n";
-      break;
+    // Validate the batch
+    for (int j = 0; j < BATCH_SIZE; ++j) {
+      if (response_batch[j].sequence_id != i + j) {
+        std::cerr << "Sequence mismatch at index " << i + j << "!\n";
+        return;
+      }
     }
   }
     
