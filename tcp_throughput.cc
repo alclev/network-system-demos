@@ -161,7 +161,7 @@ void run_tcp_client(const char* ip) {
   for (size_t i = 0; i < total_chunks; i++) {
     size_t bytes_sent = 0;
     while (bytes_sent < TCP_CHUNK_SIZE) {
-      ssize_t result = send(sock, buffer.data() + bytes_sent, TCP_CHUNK_SIZE - bytes_sent, MSG_ZEROCOPY);
+      ssize_t result = send(sock, buffer.data() + bytes_sent, TCP_CHUNK_SIZE - bytes_sent, MSG_NOSIGNAL);
       if (result <= 0) {
         log_error("Send failed:", errno);
         close(sock);
@@ -175,7 +175,7 @@ void run_tcp_client(const char* ip) {
   if (remaining_bytes > 0) {
     size_t bytes_sent = 0;
     while (bytes_sent < remaining_bytes) {
-      ssize_t result = send(sock, buffer.data() + bytes_sent, remaining_bytes - bytes_sent, MSG_ZEROCOPY);
+      ssize_t result = send(sock, buffer.data() + bytes_sent, remaining_bytes - bytes_sent, MSG_NOSIGNAL);
       if (result <= 0) {
         log_error("Send failed on remainder:", errno);
         close(sock);
