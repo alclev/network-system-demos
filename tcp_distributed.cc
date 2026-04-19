@@ -12,7 +12,8 @@
 const int NUM_CLIENT_THREADS = 6;
 const int PORT = 6005;
 const int NUM_NODES = 4;
-const int MESSAGES_PER_THREAD = 100000;
+const int TOTAL_MESSAGES = 100000;
+const int MESSAGES_PER_THREAD = TOTAL_MESSAGES / NUM_CLIENT_THREADS;
 
 // Hardcoded Cluster Routing Table
 const std::vector<std::string> node_ips = {
