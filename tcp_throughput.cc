@@ -13,8 +13,8 @@
 const int PORT = 6008;
 
 const size_t TARGET_DATA_BYTES = 1024ULL * 1024 * 1024; // 1 GiB
-const size_t TCP_CHUNK_SIZE = 1024; // 1 KB chunks
-// const size_t TCP_CHUNK_SIZE = 1024 * 1024; // 1 MB chunks - reduce the number of send() calls
+// const size_t TCP_CHUNK_SIZE = 1024; // 1 KB chunks
+const size_t TCP_CHUNK_SIZE = 1024 * 1024; // 1 MB chunks - reduce the number of send() calls
 
 void log_error(const char *prefix, int err) {
   char buf[1024];
