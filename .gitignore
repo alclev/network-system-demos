@@ -2,3 +2,4 @@ tcp_latency
 tcp_throughput
 benchmark
 *.exe
+tcp_distributed
